@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anthropic Token Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;
+    --text:#e2e8f0;--muted:#8892aa;--accent:#7c6af7;
+    --green:#3ecf8e;--orange:#f97316;--pink:#ec4899;--blue:#38bdf8;--yellow:#fbbf24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px}
+  h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
+  .subtitle{color:var(--muted);font-size:.875rem;margin-bottom:28px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:16px;margin-bottom:28px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px}
+  .card-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+  .card-value{font-size:1.6rem;font-weight:700;line-height:1}
+  .card-sub{font-size:.75rem;color:var(--muted);margin-top:5px}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+  .chart-full{grid-column:1/-1}
+  .chart-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+  .chart-title{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px}
+  canvas{max-height:280px}
+  .canvas-tall{max-height:340px}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted)}
+  .legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .model-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:12px}
+  .model-card{background:var(--surface2);border-radius:8px;padding:14px}
+  .model-name{font-size:.78rem;font-weight:600;margin-bottom:8px}
+  .model-stat{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted);padding:2px 0}
+  .model-stat span:last-child{color:var(--text)}
+  .bar-bg{background:var(--border);border-radius:4px;height:4px;margin-top:8px}
+  .bar-fill{height:100%;border-radius:4px}
+  h2{font-size:1rem;font-weight:600;margin-bottom:16px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .sessions-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:28px}
+  .scard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+  .scard-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:.75rem}
+  .scard-date{color:var(--muted)}
+  .scard-proj{background:var(--surface2);border-radius:4px;padding:2px 6px;font-size:.7rem;color:var(--muted)}
+  .scard-model{margin-left:auto;font-size:.72rem;font-weight:600}
+  .scard-topic{font-size:.85rem;color:var(--text);margin-bottom:10px;line-height:1.4}
+  .scard-stats{display:flex;gap:12px;font-size:.72rem;color:var(--muted)}
+  .updated{font-size:.72rem;color:var(--muted);text-align:right;margin-top:20px}
+  @media(max-width:700px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>Anthropic Token Dashboard</h1>
+<p class="subtitle">Claude Code usage &middot; 2026-05-07 → 2026-06-06 &middot; 13 sessions</p>
+
+<div class="cards">
+  <div class="card"><div class="card-label">Requests</div><div class="card-value" style="color:var(--accent)">984</div><div class="card-sub">13 sessions</div></div>
+  <div class="card"><div class="card-label">Output Tokens</div><div class="card-value" style="color:var(--green)">1.0M</div><div class="card-sub">Generated text</div></div>
+  <div class="card"><div class="card-label">Input Tokens</div><div class="card-value" style="color:var(--orange)">179K</div><div class="card-sub">Direct input</div></div>
+  <div class="card"><div class="card-label">Cache Read</div><div class="card-value" style="color:var(--blue)">99.3M</div><div class="card-sub">~94% of flow</div></div>
+  <div class="card"><div class="card-label">Cache Created</div><div class="card-value" style="color:var(--yellow)">5.1M</div><div class="card-sub">Prompt cache writes</div></div>
+  <div class="card"><div class="card-label">Total Flow</div><div class="card-value">105.6M</div><div class="card-sub">All token dims</div></div>
+</div>
+
+<div class="charts">
+  <div class="chart-box">
+    <div class="chart-title">Requests by Day of Week</div>
+    <canvas id="dowRequests"></canvas>
+  </div>
+  <div class="chart-box">
+    <div class="chart-title">Output Tokens by Day of Week</div>
+    <canvas id="dowOutput"></canvas>
+  </div>
+  <div class="chart-box chart-full">
+    <div class="chart-title">Token Breakdown by Day of Week (log scale)</div>
+    <canvas id="dowStacked" class="canvas-tall"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#38bdf8"></div>Cache Read</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div>Cache Creation</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3ecf8e"></div>Output</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Input</div>
+    </div>
+  </div>
+  <div class="chart-box chart-full">
+    <div class="chart-title">Daily Token Burn + Requests</div>
+    <canvas id="timeline" class="canvas-tall"></canvas>
+  </div>
+</div>
+
+<div class="chart-box" style="margin-bottom:20px">
+  <div class="chart-title">Model Breakdown</div>
+  <div class="model-grid" id="modelGrid"></div>
+</div>
+
+<h2>Sessions</h2>
+<div class="sessions-grid">
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 06</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">Can I get to Claude design from here?</div>
+  <div class="scard-stats">
+    <span>50 req</span>
+    <span>74K out</span>
+    <span>1.9M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 06</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Haiku 4.5, Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">tell me about workflows and how to use them here</div>
+  <div class="scard-stats">
+    <span>71 req</span>
+    <span>24K out</span>
+    <span>2.6M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 05</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">Ok the CTI-Mythos is in admin draft and ready to be published but the images are pixelated. Read the report, look at eac</div>
+  <div class="scard-stats">
+    <span>71 req</span>
+    <span>46K out</span>
+    <span>4.1M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 02</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#38bdf8">Haiku 4.5, Opus 4.8</span>
+  </div>
+  <div class="scard-topic">/clear
+            clear</div>
+  <div class="scard-stats">
+    <span>355 req</span>
+    <span>552K out</span>
+    <span>63.2M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 02</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#38bdf8">Opus 4.8</span>
+  </div>
+  <div class="scard-topic">/clear
+            clear</div>
+  <div class="scard-stats">
+    <span>40 req</span>
+    <span>27K out</span>
+    <span>1.3M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 02</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">/goal
+            goal
+            receipts are downloaded for all exceptions noted for every email in the Bulk Messages</div>
+  <div class="scard-stats">
+    <span>152 req</span>
+    <span>137K out</span>
+    <span>17.0M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">Jun 01</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Opus 4.7, Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">model</div>
+  <div class="scard-stats">
+    <span>41 req</span>
+    <span>14K out</span>
+    <span>4.0M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 26</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">save this to my personal-context memory and push to github "Memory: Ryan Devine’s Security Assessment Framework appears </div>
+  <div class="scard-stats">
+    <span>24 req</span>
+    <span>4K out</span>
+    <span>658K total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 23</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">how can I connect to my last converastion with you</div>
+  <div class="scard-stats">
+    <span>2 req</span>
+    <span>346 out</span>
+    <span>48K total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 23</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">where am I logged in?</div>
+  <div class="scard-stats">
+    <span>126 req</span>
+    <span>98K out</span>
+    <span>3.9M total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 21</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">what is the AI GOAD test?</div>
+  <div class="scard-stats">
+    <span>8 req</span>
+    <span>2K out</span>
+    <span>181K total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 12</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#7c6af7">Sonnet 4.6</span>
+  </div>
+  <div class="scard-topic">Review my most recent 5 conversations and list them for me</div>
+  <div class="scard-stats">
+    <span>8 req</span>
+    <span>1K out</span>
+    <span>175K total</span>
+  </div>
+</div>
+<div class="scard">
+  <div class="scard-header">
+    <span class="scard-date">May 07</span>
+    <span class="scard-proj">personal-context</span>
+    <span class="scard-model" style="color:#ec4899">Opus 4.7</span>
+  </div>
+  <div class="scard-topic">I've been working from claude command-line on my mac-mini to build an LLM stack but the power went out again. Please tex</div>
+  <div class="scard-stats">
+    <span>36 req</span>
+    <span>32K out</span>
+    <span>6.5M total</span>
+  </div>
+</div>
+</div>
+
+<p class="updated">Last updated: 2026-06-06 12:25 &middot; auto-generated by generate_token_dashboard.py</p>
+
+<script>
+const DOW = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const dowData = {"Monday": {"input": 169, "output": 14399, "cache_read": 3731417, "cache_creation": 302427, "requests": 41}, "Tuesday": {"input": 76883, "output": 181230, "cache_read": 18437189, "cache_creation": 955064, "requests": 242}, "Wednesday": {"input": 6287, "output": 303181, "cache_read": 26083803, "cache_creation": 703066, "requests": 201}, "Thursday": {"input": 13193, "output": 270952, "cache_read": 40329972, "cache_creation": 1584528, "requests": 179}, "Friday": {"input": 120, "output": 37349, "cache_read": 3170318, "cache_creation": 342263, "requests": 60}, "Saturday": {"input": 82297, "output": 205552, "cache_read": 7534313, "cache_creation": 1223803, "requests": 255}, "Sunday": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "requests": 0}};
+const byDate = {"2026-05-26": {"input": 30, "output": 4258, "cache_read": 608991, "cache_creation": 44375, "requests": 24}, "2026-05-07": {"input": 81, "output": 32014, "cache_read": 6146830, "cache_creation": 336539, "requests": 36}, "2026-05-12": {"input": 18, "output": 1040, "cache_read": 123636, "cache_creation": 50311, "requests": 8}, "2026-06-06": {"input": 911, "output": 106772, "cache_read": 4399591, "cache_creation": 578395, "requests": 128}, "2026-05-23": {"input": 81386, "output": 98780, "cache_read": 3134722, "cache_creation": 645408, "requests": 127}, "2026-06-02": {"input": 76835, "output": 175932, "cache_read": 17704562, "cache_creation": 860378, "requests": 210}, "2026-06-03": {"input": 6287, "output": 303181, "cache_read": 26083803, "cache_creation": 703066, "requests": 201}, "2026-06-04": {"input": 13090, "output": 236640, "cache_read": 34027602, "cache_creation": 1224368, "requests": 135}, "2026-06-01": {"input": 169, "output": 14399, "cache_read": 3731417, "cache_creation": 302427, "requests": 41}, "2026-06-05": {"input": 120, "output": 37349, "cache_read": 3170318, "cache_creation": 342263, "requests": 60}, "2026-05-21": {"input": 22, "output": 2298, "cache_read": 155540, "cache_creation": 23621, "requests": 8}};
+const byModel = {"claude-sonnet-4-6": {"input": 86889, "output": 384841, "cache_read": 27685809, "cache_creation": 2221927, "requests": 498}, "claude-opus-4-7": {"input": 238, "output": 45783, "cache_read": 9803497, "cache_creation": 613424, "requests": 73}, "claude-opus-4-8": {"input": 91699, "output": 578362, "cache_read": 61450384, "cache_creation": 2036736, "requests": 381}, "claude-haiku-4-5-20251001": {"input": 123, "output": 3677, "cache_read": 347322, "cache_creation": 239064, "requests": 26}};
+const gc = 'rgba(46,51,80,0.6)', tc = '#8892aa';
+Chart.defaults.color = tc;
+Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+Chart.defaults.font.size = 11;
+
+new Chart(document.getElementById('dowRequests'), {
+  type:'bar',
+  data:{
+    labels:DOW,
+    datasets:[{
+      label:'Requests',
+      data:DOW.map(d=>dowData[d].requests),
+      backgroundColor:DOW.map(d=>{
+        const v=dowData[d].requests,mx=Math.max(...DOW.map(x=>dowData[x].requests));
+        return `rgba(124,106,247,${0.35+0.65*(v/mx)})`;
+      }),
+      borderColor:'#7c6af7',borderWidth:1,borderRadius:6
+    }]
+  },
+  options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{color:gc},ticks:{color:tc}},y:{grid:{color:gc},ticks:{color:tc}}}}
+});
+
+new Chart(document.getElementById('dowOutput'), {
+  type:'bar',
+  data:{
+    labels:DOW,
+    datasets:[{
+      label:'Output Tokens',
+      data:DOW.map(d=>dowData[d].output),
+      backgroundColor:DOW.map(d=>{
+        const v=dowData[d].output,mx=Math.max(...DOW.map(x=>dowData[x].output));
+        return `rgba(62,207,142,${0.35+0.65*(v/mx)})`;
+      }),
+      borderColor:'#3ecf8e',borderWidth:1,borderRadius:6
+    }]
+  },
+  options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{color:gc},ticks:{color:tc}},y:{grid:{color:gc},ticks:{color:tc,callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v}}}}
+});
+
+new Chart(document.getElementById('dowStacked'), {
+  type:'bar',
+  data:{
+    labels:DOW,
+    datasets:[
+      {label:'Cache Read',data:DOW.map(d=>dowData[d].cache_read||1),backgroundColor:'rgba(56,189,248,0.75)'},
+      {label:'Cache Creation',data:DOW.map(d=>dowData[d].cache_creation||1),backgroundColor:'rgba(251,191,36,0.75)'},
+      {label:'Output',data:DOW.map(d=>dowData[d].output||1),backgroundColor:'rgba(62,207,142,0.75)'},
+      {label:'Input',data:DOW.map(d=>dowData[d].input||1),backgroundColor:'rgba(249,115,22,0.75)',borderRadius:{topLeft:4,topRight:4}}
+    ]
+  },
+  options:{responsive:true,plugins:{legend:{display:false}},scales:{
+    x:{stacked:true,grid:{color:gc},ticks:{color:tc}},
+    y:{stacked:true,type:'logarithmic',grid:{color:gc},ticks:{color:tc,callback:v=>{
+      if([1e3,1e4,1e5,1e6,1e7,1e8].includes(v)) return v>=1e6?(v/1e6).toFixed(0)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
+      return '';
+    }}}
+  }}
+});
+
+const ds=Object.keys(byDate).sort();
+const mfmt=d=>{const[,m,dy]=d.split('-');return['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m]+' '+(+dy)};
+new Chart(document.getElementById('timeline'), {
+  type:'bar',
+  data:{
+    labels:ds.map(mfmt),
+    datasets:[
+      {label:'Cache Read',data:ds.map(d=>byDate[d].cache_read),backgroundColor:'rgba(56,189,248,0.6)',stack:'t',yAxisID:'yT'},
+      {label:'Cache Creation',data:ds.map(d=>byDate[d].cache_creation),backgroundColor:'rgba(251,191,36,0.7)',stack:'t',yAxisID:'yT'},
+      {label:'Output',data:ds.map(d=>byDate[d].output),backgroundColor:'rgba(62,207,142,0.7)',stack:'t',yAxisID:'yT'},
+      {label:'Input',data:ds.map(d=>byDate[d].input),backgroundColor:'rgba(249,115,22,0.7)',stack:'t',yAxisID:'yT'},
+      {label:'Requests',type:'line',data:ds.map(d=>byDate[d].requests),borderColor:'#7c6af7',backgroundColor:'rgba(124,106,247,0.15)',fill:true,tension:0.3,pointRadius:4,pointBackgroundColor:'#7c6af7',yAxisID:'yR',order:0}
+    ]
+  },
+  options:{responsive:true,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:true,labels:{color:tc,boxWidth:12,padding:12}},
+      tooltip:{callbacks:{label:ctx=>{const v=ctx.raw,l=ctx.dataset.label,f=v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':v;return ` ${l}: ${f}`}}}},
+    scales:{
+      x:{stacked:true,grid:{color:gc},ticks:{color:tc}},
+      yT:{stacked:true,position:'left',grid:{color:gc},ticks:{color:tc,callback:v=>v>=1e6?(v/1e6).toFixed(0)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v}},
+      yR:{position:'right',grid:{display:false},ticks:{color:'#7c6af7'},title:{display:true,text:'Requests',color:'#7c6af7',font:{size:11}}}
+    }
+  }
+});
+
+const mc={'claude-sonnet-4-6':'#7c6af7','claude-opus-4-7':'#ec4899','claude-opus-4-8':'#38bdf8','claude-haiku-4-5-20251001':'#3ecf8e'};
+const mn={'claude-sonnet-4-6':'Sonnet 4.6','claude-opus-4-7':'Opus 4.7','claude-opus-4-8':'Opus 4.8','claude-haiku-4-5-20251001':'Haiku 4.5'};
+const totalR=Object.values(byModel).reduce((s,m)=>s+m.requests,0);
+const grid=document.getElementById('modelGrid');
+Object.entries(byModel).sort((a,b)=>b[1].requests-a[1].requests).forEach(([m,data])=>{
+  const color=mc[m]||'#8892aa',name=mn[m]||m,pct=Math.round(100*data.requests/totalR);
+  const fmt=v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
+  grid.innerHTML+=`<div class="model-card">
+    <div class="model-name" style="color:${color}">${name}</div>
+    <div class="model-stat"><span>Requests</span><span>${data.requests} (${pct}%)</span></div>
+    <div class="model-stat"><span>Output</span><span>${fmt(data.output)}</span></div>
+    <div class="model-stat"><span>Cache Read</span><span>${fmt(data.cache_read)}</span></div>
+    <div class="model-stat"><span>Total Flow</span><span>${fmt(data.input+data.output+data.cache_read+data.cache_creation)}</span></div>
+    <div class="bar-bg"><div class="bar-fill" style="background:${color};width:${pct}%"></div></div>
+  </div>`;
+});
+</script>
+</body>
+</html>
